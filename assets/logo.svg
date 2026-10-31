@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="144" height="144" role="img" aria-label="juice logo">
+  <defs>
+    <linearGradient id="bgSquircle" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141820" />
+      <stop offset="100%" stop-color="#0E1117" />
+    </linearGradient>
+    <linearGradient id="dropLeft" x1="0%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FF9E00" />
+      <stop offset="100%" stop-color="#F26400" />
+    </linearGradient>
+    <linearGradient id="dropRight" x1="50%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFB703" />
+      <stop offset="100%" stop-color="#FB8500" />
+    </linearGradient>
+    <clipPath id="leftHalf">
+      <rect x="0" y="0" width="128" height="256" />
+    </clipPath>
+    <clipPath id="rightHalf">
+      <rect x="128" y="0" width="128" height="256" />
+    </clipPath>
+  </defs>
+
+  <!-- Dark obsidian squircle badge (transparent outer canvas for light & dark mode) -->
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#bgSquircle)" stroke="#262C3A" stroke-width="3" />
+
+  <!-- Split-faceted citrus juice droplet -->
+  <path
+    d="M128 46 C128 46, 66 118, 66 160 C66 194.2, 93.8 218, 128 218 C162.2 218, 190 194.2, 190 160 C190 118, 128 46, 128 46 Z"
+    fill="url(#dropLeft)"
+    clip-path="url(#leftHalf)"
+  />
+  <path
+    d="M128 46 C128 46, 66 118, 66 160 C66 194.2, 93.8 218, 128 218 C162.2 218, 190 194.2, 190 160 C190 118, 128 46, 128 46 Z"
+    fill="url(#dropRight)"
+    clip-path="url(#rightHalf)"
+  />
+
+  <!-- Crisp cream-white mathematical proof turnstile (⊢) -->
+  <rect x="108" y="106" width="13" height="82" rx="2" fill="#FFFDF5" />
+  <rect x="118" y="141" width="42" height="13" rx="2" fill="#FFFDF5" />
+</svg>

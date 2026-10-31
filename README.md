@@ -1,6 +1,13 @@
-# `juice`
-
-**Open-source formal reasoning, autoformalization, and Lean 4 theorem-proving CLI.**
+<div align="center">
+  <img src="assets/logo.svg" alt="juice logo" width="128" height="128" />
+  <h1><code>juice</code></h1>
+  <p><strong>Open-source formal reasoning, autoformalization, and Lean 4 theorem-proving CLI.</strong></p>
+  <p>
+    <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-orange.svg" alt="License: MIT OR Apache-2.0" /></a>
+    <img src="https://img.shields.io/badge/lean-4-blue.svg" alt="Lean 4" />
+    <img src="https://img.shields.io/badge/rust-2024-dea584.svg" alt="Rust" />
+  </p>
+</div>
 
 `juice` pairs frontier/specialized language models with **Lean 4**'s deterministic kernel so every proof or autoformalized statement it outputs is machine-checked down to foundational axioms—with zero hallucinations.
 
