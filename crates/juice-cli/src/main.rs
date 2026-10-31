@@ -10,6 +10,10 @@ use juice_lean::{
 };
 use juice_llm::ModelRouter;
 use juice_search::{AutoformalizeOptions, Autoformalizer, TwoTierProver};
+use juice_smt::z3_doctor;
+use juice_verify::{
+    RuntimeReplayVerdict, VerifyCommandOptions, render_sarif_report, runtime_doctor, verify_path,
+};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -18,7 +22,7 @@ use std::sync::Arc;
 #[command(
     name = "juice",
     version,
-    about = "Open-source formal reasoning, autoformalization, and Lean 4 theorem-proving CLI (MIT OR Apache-2.0)"
+    about = "Open-source formal software verification, autoformalization, and Z3/Lean 4 theorem-proving CLI (MIT OR Apache-2.0)"
 )]
 pub struct Cli {
     /// Emit machine-readable JSON output
@@ -31,6 +35,52 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Formally verify Rust, C, Python, or TypeScript source code (Z3 SMT-LIB2 + Lean 4 + live runtime crash replay)
+    Verify {
+        /// Path to source file (`.rs`, `.c`, `.py`, `.ts`) or directory
+        path: PathBuf,
+
+        /// Filter verification to functions matching this substring
+        #[arg(long = "fn")]
+        target_fn: Option<String>,
+
+        /// Explicit postcondition rule (e.g. `result >= lo && result <= hi` or plain-English spec)
+        #[arg(long)]
+        spec: Option<String>,
+
+        /// Prove two functions equivalent across all valid inputs (`fast_fn=naive_fn`)
+        #[arg(long)]
+        equiv: Option<String>,
+
+        /// Synthesize a formally verified patch (`[UNBOUNDED PROVEN ✓]`) when bugs are discovered
+        #[arg(long)]
+        fix: bool,
+
+        /// Write formally verified `--fix` patches directly to source files in-place
+        #[arg(long)]
+        in_place: bool,
+
+        /// Print unified git-style diff of formally verified `--fix` patches
+        #[arg(long)]
+        diff: bool,
+
+        /// Emit a native regression unit test (`#[test]`, C `assert`, `pytest`, `bun:test`) for confirmed bugs
+        #[arg(long)]
+        emit_test: bool,
+
+        /// Loop and recursion Bounded Model Checking unwinding depth (defaults to 32)
+        #[arg(long)]
+        unwind: Option<usize>,
+
+        /// Write OASIS SARIF v2.1.0 report to file (or `-` for stdout) for GitHub Code Scanning / CI
+        #[arg(long)]
+        sarif: Option<PathBuf>,
+
+        /// Skip live compiler/runtime counterexample replay (`rustc`, `clang` UBSan, `python3`, `bun`)
+        #[arg(long)]
+        no_replay: bool,
+    },
+
     /// Discover and prove `sorry` placeholders in a Lean 4 file or Lake project
     Fill {
         /// Target `.lean` file or project directory (defaults to current directory)
@@ -214,6 +264,167 @@ async fn run_cli(cli: Cli) -> anyhow::Result<ExitCode> {
     let mut cfg = JuiceConfig::load(cwd.as_deref())?;
 
     match cli.command {
+        Commands::Verify {
+            path,
+            target_fn,
+            spec,
+            equiv,
+            fix,
+            in_place,
+            diff,
+            emit_test,
+            unwind,
+            sarif,
+            no_replay,
+        } => {
+            let equiv_pair = match equiv {
+                Some(raw) => {
+                    let (a, b) = raw.split_once('=').ok_or_else(|| {
+                        anyhow::anyhow!("Expected `--equiv fast_fn=naive_fn`, got `{raw}`")
+                    })?;
+                    Some((a.trim().to_string(), b.trim().to_string()))
+                }
+                None => None,
+            };
+
+            let cmd_opts = VerifyCommandOptions {
+                target_fn,
+                cli_spec: spec,
+                equiv: equiv_pair,
+                fix,
+                in_place,
+                emit_test,
+                unwind_depth: unwind.unwrap_or(cfg.verify.default_unwind),
+                replay_runtime: !no_replay && cfg.verify.replay_runtime,
+            };
+
+            let router = ModelRouter::from_config(&cfg.models);
+            let active_router = cfg
+                .models
+                .planner
+                .resolve_api_key()
+                .is_some()
+                .then_some(&router);
+
+            let summary = verify_path(&path, &cfg, &cmd_opts, active_router).await?;
+
+            if let Some(sarif_out) = &sarif {
+                let sarif_json = serde_json::to_string_pretty(&render_sarif_report(&summary.files))?;
+                if sarif_out == Path::new("-") {
+                    println!("{sarif_json}");
+                    return Ok(if summary.has_unfixed_bugs() {
+                        ExitCode::FAILURE
+                    } else {
+                        ExitCode::SUCCESS
+                    });
+                } else {
+                    std::fs::write(sarif_out, sarif_json).with_context(|| {
+                        format!("Failed to write SARIF report to `{}`", sarif_out.display())
+                    })?;
+                }
+            }
+
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+            } else {
+                for file_rep in &summary.files {
+                    println!(
+                        "== {} ({}) ==",
+                        file_rep.path.display(),
+                        file_rep.language.display_name()
+                    );
+                    for fn_rep in &file_rep.functions {
+                        println!(
+                            "  {} `{}` (lines {}-{}) — {}/{} obligations proven via {}",
+                            fn_rep.badge.label(),
+                            fn_rep.function_name,
+                            fn_rep.start_line,
+                            fn_rep.end_line,
+                            fn_rep.obligations_proven,
+                            fn_rep.obligations_checked,
+                            fn_rep.backend_used
+                        );
+                        for note in &fn_rep.notes {
+                            println!("    • {note}");
+                        }
+                        for cex in &fn_rep.counterexamples {
+                            let inputs_disp = if cex.inputs.is_empty() {
+                                "(no arguments)".to_string()
+                            } else {
+                                cex.inputs
+                                    .iter()
+                                    .map(|(k, v)| format!("{k} = {v}"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            };
+                            println!(
+                                "    ✗ Line {} [{}]: {}",
+                                cex.line,
+                                cex.kind.rule_id(),
+                                cex.description
+                            );
+                            println!("      Counterexample : {inputs_disp}");
+                            match &cex.runtime_replay {
+                                RuntimeReplayVerdict::ConfirmedFailure { toolchain, trace } => {
+                                    println!("      Live Replay    : CONFIRMED on {toolchain}");
+                                    println!("      Crash Trace    : {trace}");
+                                }
+                                RuntimeReplayVerdict::Skipped => {
+                                    println!("      Live Replay    : skipped (--no-replay)");
+                                }
+                                RuntimeReplayVerdict::ToolchainUnavailable { reason } => {
+                                    println!("      Live Replay    : unavailable ({reason})");
+                                }
+                                RuntimeReplayVerdict::NoFailureObserved { output } => {
+                                    println!("      Live Replay    : returned `{output}`");
+                                }
+                            }
+                        }
+                        if let Some(test_code) = &fn_rep.generated_test {
+                            println!("\n    -- Generated Regression Test --");
+                            for line in test_code.lines() {
+                                println!("    {line}");
+                            }
+                        }
+                    }
+
+                    if let Some(patched) = &file_rep.patched_source
+                        && (diff || !in_place)
+                    {
+                        println!(
+                            "\n{}",
+                            render_unified_diff(&file_rep.path, &file_rep.original_source, patched)
+                        );
+                    }
+                    if in_place && file_rep.patched_source.is_some() {
+                        println!("  Patched `{}` in-place with formally verified fix.", file_rep.path.display());
+                    }
+                }
+
+                println!(
+                    "\nSummary: {} function(s) checked — {} unbounded proven, {} bounded verified, {} bug(s){}",
+                    summary.total_functions,
+                    summary.unbounded_proven,
+                    summary.bounded_verified,
+                    summary.bugs_found,
+                    if summary.fixed_functions > 0 {
+                        format!(", {} formally repaired", summary.fixed_functions)
+                    } else {
+                        String::new()
+                    }
+                );
+                if let Some(sarif_out) = &sarif {
+                    println!("Wrote SARIF v2.1.0 report to {}", sarif_out.display());
+                }
+            }
+
+            Ok(if summary.has_unfixed_bugs() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            })
+        }
+
         Commands::Fill {
             path,
             in_place,
@@ -513,11 +724,49 @@ async fn run_cli(cli: Cli) -> anyhow::Result<ExitCode> {
 
         Commands::Doctor => {
             let report = LeanBackend::doctor(&cfg, cwd.as_deref()).await;
+            let z3_rep = z3_doctor(cfg.verify.z3_path.as_deref());
+            let rt_rep = runtime_doctor();
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "lean": report,
+                        "z3": z3_rep,
+                        "runtimes": rt_rep,
+                    }))?
+                );
             } else {
                 println!("juice doctor");
                 println!("------------");
+                println!(
+                    "  z3 smt solver       : {}{}",
+                    z3_rep
+                        .z3_bin
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "not found (install via `brew install z3`)".into()),
+                    z3_rep
+                        .version
+                        .as_ref()
+                        .map(|v| format!(" ({v})"))
+                        .unwrap_or_default()
+                );
+                println!(
+                    "  rustc replay        : {}",
+                    rt_rep.rustc.as_deref().unwrap_or("not found")
+                );
+                println!(
+                    "  clang UBSan replay  : {}",
+                    rt_rep.clang.as_deref().unwrap_or("not found")
+                );
+                println!(
+                    "  python3 replay      : {}",
+                    rt_rep.python3.as_deref().unwrap_or("not found")
+                );
+                println!(
+                    "  bun / node replay   : {}",
+                    rt_rep.bun_or_node.as_deref().unwrap_or("not found")
+                );
                 println!(
                     "  elan binary         : {}",
                     report

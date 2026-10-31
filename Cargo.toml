@@ -4,19 +4,21 @@ members = [
     "crates/juice-core",
     "crates/juice-llm",
     "crates/juice-lean",
+    "crates/juice-smt",
     "crates/juice-search",
+    "crates/juice-verify",
     "crates/juice-mcp",
     "crates/juice-cli",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.85"
-description = "Open-source formal reasoning, autoformalization, and Lean 4 theorem-proving CLI"
+description = "Open-source formal software verification, autoformalization, and Z3/Lean 4 theorem-proving CLI"
 repository = "https://github.com/noahsabaj/juice"
-keywords = ["lean4", "theorem-proving", "formal-verification", "autoformalization", "ai"]
+keywords = ["formal-verification", "lean4", "z3", "smt", "theorem-proving"]
 categories = ["command-line-utilities", "development-tools", "mathematics", "science"]
 
 [workspace.dependencies]
@@ -43,5 +45,7 @@ walkdir = "2.5"
 juice-core = { path = "crates/juice-core" }
 juice-llm = { path = "crates/juice-llm" }
 juice-lean = { path = "crates/juice-lean" }
+juice-smt = { path = "crates/juice-smt" }
 juice-search = { path = "crates/juice-search" }
+juice-verify = { path = "crates/juice-verify" }
 juice-mcp = { path = "crates/juice-mcp" }

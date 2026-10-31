@@ -171,12 +171,48 @@ impl LeanConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyConfig {
+    #[serde(default)]
+    pub z3_path: Option<PathBuf>,
+    #[serde(default = "default_z3_timeout_secs")]
+    pub z3_timeout_secs: u64,
+    #[serde(default = "default_unwind")]
+    pub default_unwind: usize,
+    #[serde(default = "default_true")]
+    pub replay_runtime: bool,
+    #[serde(default = "default_true")]
+    pub escalate_to_lean: bool,
+}
+
+fn default_z3_timeout_secs() -> u64 {
+    10
+}
+
+fn default_unwind() -> usize {
+    32
+}
+
+impl Default for VerifyConfig {
+    fn default() -> Self {
+        Self {
+            z3_path: None,
+            z3_timeout_secs: default_z3_timeout_secs(),
+            default_unwind: default_unwind(),
+            replay_runtime: true,
+            escalate_to_lean: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JuiceConfig {
     pub models: ModelsConfig,
     #[serde(default)]
     pub search: SearchConfig,
     #[serde(default)]
     pub lean: LeanConfig,
+    #[serde(default)]
+    pub verify: VerifyConfig,
 }
 
 impl Default for JuiceConfig {
@@ -279,6 +315,7 @@ impl JuiceConfig {
             models: ModelsConfig { planner, prover },
             search: SearchConfig::default(),
             lean: LeanConfig::default(),
+            verify: VerifyConfig::default(),
         }
     }
 
@@ -332,6 +369,12 @@ online_premise_search = false
 [lean]
 worker_pool_size = 2
 allow_native_decide = false
+
+[verify]
+z3_timeout_secs = 10
+default_unwind = 32
+replay_runtime = true
+escalate_to_lean = true
 "#
     }
 }

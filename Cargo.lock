@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "juice-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -731,6 +731,8 @@ dependencies = [
  "juice-llm",
  "juice-mcp",
  "juice-search",
+ "juice-smt",
+ "juice-verify",
  "serde",
  "serde_json",
  "similar",
@@ -743,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "juice-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -759,7 +761,7 @@ dependencies = [
 
 [[package]]
 name = "juice-lean"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -779,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "juice-llm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -796,13 +798,15 @@ dependencies = [
 
 [[package]]
 name = "juice-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "juice-core",
  "juice-lean",
  "juice-llm",
  "juice-search",
+ "juice-smt",
+ "juice-verify",
  "serde",
  "serde_json",
  "tempfile",
@@ -812,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "juice-search"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -827,6 +831,39 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "juice-smt"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "juice-verify"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "juice-core",
+ "juice-lean",
+ "juice-llm",
+ "juice-search",
+ "juice-smt",
+ "regex",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "walkdir",
 ]
 
 [[package]]

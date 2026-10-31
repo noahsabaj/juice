@@ -1,0 +1,15 @@
+[package]
+name = "juice-smt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Pure-Rust Z3 SMT-LIB2 bitvector/integer/array solver driver and counterexample model parser for juice"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

@@ -49,6 +49,34 @@ impl ModelRouter {
         format!("{}:{}", self.prover.provider_name(), self.prover.model_name())
     }
 
+    pub async fn complete_planner_text(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> anyhow::Result<String> {
+        let req = CompletionRequest {
+            system: Some(system.to_string()),
+            messages: vec![LlmMessage::user(user.to_string())],
+            temperature: self.planner_temp,
+            max_tokens: 4096,
+            n: 1,
+        };
+        let outputs = self.planner.complete(&req).await?;
+        let first = outputs
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("Planner returned empty completion"))?;
+        Ok(first.text.clone())
+    }
+
+    pub async fn complete_planner_json<T: serde::de::DeserializeOwned>(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> anyhow::Result<T> {
+        let text = self.complete_planner_text(system, user).await?;
+        extract_json_payload::<T>(&text)
+    }
+
     pub async fn autoformalize_claim(
         &self,
         claim_text: &str,

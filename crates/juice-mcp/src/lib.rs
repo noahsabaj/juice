@@ -4,6 +4,7 @@ use juice_core::{
 use juice_lean::{LeanBackend, parser::extract_proof_targets, workspace::resolve_workspace};
 use juice_llm::ModelRouter;
 use juice_search::{AutoformalizeOptions, Autoformalizer, TwoTierProver};
+use juice_verify::{SourceLanguage, VerifyCommandOptions, verify_inline_code, verify_path};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -276,6 +277,77 @@ async fn dispatch_tool_call(
                 Ok(serde_json::to_string_pretty(&diags)?)
             }
         }
+        "juice_verify_code" => {
+            let target_fn = args
+                .get("function")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let cli_spec = args
+                .get("spec")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let equiv = args
+                .get("equiv")
+                .and_then(Value::as_str)
+                .and_then(|s| s.split_once('='))
+                .map(|(a, b)| (a.trim().to_string(), b.trim().to_string()));
+            let fix = args.get("fix").and_then(Value::as_bool).unwrap_or(false);
+            let in_place = args
+                .get("in_place")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let emit_test = args
+                .get("emit_test")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let unwind_depth = args
+                .get("unwind")
+                .and_then(Value::as_u64)
+                .map(|n| n as usize)
+                .unwrap_or(cfg.verify.default_unwind);
+            let replay_runtime = args
+                .get("replay_runtime")
+                .and_then(Value::as_bool)
+                .unwrap_or(cfg.verify.replay_runtime);
+
+            let cmd_opts = VerifyCommandOptions {
+                target_fn,
+                cli_spec,
+                equiv,
+                fix,
+                in_place,
+                emit_test,
+                unwind_depth,
+                replay_runtime,
+            };
+            let active_router = cfg
+                .models
+                .planner
+                .resolve_api_key()
+                .is_some()
+                .then_some(router);
+
+            if let Some(path_str) = args.get("path").and_then(Value::as_str) {
+                let summary =
+                    verify_path(&PathBuf::from(path_str), cfg, &cmd_opts, active_router).await?;
+                Ok(serde_json::to_string_pretty(&summary)?)
+            } else if let Some(code) = args.get("code").and_then(Value::as_str) {
+                let lang_str = args
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .unwrap_or("rust");
+                let lang = SourceLanguage::from_name(lang_str).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Unsupported language `{lang_str}` (expected `rust`, `c`, `python`, or `typescript`)"
+                    )
+                })?;
+                let report =
+                    verify_inline_code(code, lang, cfg, &cmd_opts, active_router).await?;
+                Ok(serde_json::to_string_pretty(&report)?)
+            } else {
+                anyhow::bail!("Provide either `path` or inline `code` (+ `language`) to `juice_verify_code`")
+            }
+        }
         other => anyhow::bail!("Unknown MCP tool `{other}`"),
     }
 }
@@ -343,6 +415,26 @@ fn tool_definitions() -> Value {
                     "workspace_path": { "type": "string", "description": "Optional path to Lean project" }
                 },
                 "required": ["lean_code"]
+            }
+        },
+        {
+            "name": "juice_verify_code",
+            "description": "Formally verify Rust, C, Python, or TypeScript functions using Z3 SMT-LIB2 + Lean 4 + live runtime crash replay. Automatically checks integer overflow, division by zero, array bounds, panics, `@requires`/`@ensures` contracts, functional equivalence, and optionally synthesizes formally verified bug fixes (`fix: true`).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Path to `.rs`, `.c`, `.py`, `.ts` file or directory" },
+                    "code": { "type": "string", "description": "Inline source code snippet (when `path` is omitted)" },
+                    "language": { "type": "string", "description": "Language for inline `code`: `rust`, `c`, `python`, or `typescript`" },
+                    "function": { "type": "string", "description": "Optional function name substring filter" },
+                    "spec": { "type": "string", "description": "Optional postcondition rule (e.g. `result >= lo && result <= hi`)" },
+                    "equiv": { "type": "string", "description": "Optional equivalence pair `fast_fn=naive_fn`" },
+                    "fix": { "type": "boolean", "description": "Synthesize a formally verified patch if a bug is found" },
+                    "in_place": { "type": "boolean", "description": "Write verified patch directly to `path`" },
+                    "emit_test": { "type": "boolean", "description": "Emit a native regression unit test for counterexamples" },
+                    "unwind": { "type": "integer", "description": "Loop/recursion unwinding bound (default 32)" },
+                    "replay_runtime": { "type": "boolean", "description": "Replay Z3 counterexamples on real compiler/runtime (default true)" }
+                }
             }
         }
     ])
@@ -451,7 +543,7 @@ mod tests {
         client_reader.read_line(&mut resp_line).await.unwrap();
         let tools_json: Value = serde_json::from_str(&resp_line).unwrap();
         let tools_arr = tools_json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools_arr.len(), 5);
+        assert_eq!(tools_arr.len(), 6);
 
         // 3. tools/call -> juice_premise_search
         let call_req = json!({
@@ -476,6 +568,34 @@ mod tests {
         assert_eq!(call_resp["result"]["isError"], false);
         let text = call_resp["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("custom_comm"));
+
+        // 4. tools/call -> juice_verify_code (inline Rust verification + auto-fix)
+        if juice_smt::locate_z3(None).is_some() {
+            let verify_req = json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "juice_verify_code",
+                    "arguments": {
+                        "language": "rust",
+                        "code": "pub fn midpoint(lo: i32, hi: i32) -> i32 { (lo + hi) / 2 }",
+                        "fix": true,
+                        "replay_runtime": false
+                    }
+                }
+            });
+            client_w
+                .write_all(format!("{}\n", serde_json::to_string(&verify_req).unwrap()).as_bytes())
+                .await
+                .unwrap();
+            resp_line.clear();
+            client_reader.read_line(&mut resp_line).await.unwrap();
+            let verify_resp: Value = serde_json::from_str(&resp_line).unwrap();
+            assert_eq!(verify_resp["result"]["isError"], false);
+            let vtext = verify_resp["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(vtext.contains("unbounded-proven"));
+        }
 
         drop(client_w);
         let _ = server_task.await;
