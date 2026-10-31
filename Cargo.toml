@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/juice-core",
+    "crates/juice-llm",
+    "crates/juice-lean",
+    "crates/juice-search",
+    "crates/juice-mcp",
+    "crates/juice-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+description = "Open-source formal reasoning, autoformalization, and Lean 4 theorem-proving CLI"
+repository = "https://github.com/noahsabaj/juice"
+keywords = ["lean4", "theorem-proving", "formal-verification", "autoformalization", "ai"]
+categories = ["command-line-utilities", "development-tools", "mathematics", "science"]
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive", "env"] }
+dirs = "5.0"
+futures = "0.3"
+indicatif = "0.17"
+regex = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+similar = "2.6"
+tempfile = "3.12"
+thiserror = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+walkdir = "2.5"
+
+juice-core = { path = "crates/juice-core" }
+juice-llm = { path = "crates/juice-llm" }
+juice-lean = { path = "crates/juice-lean" }
+juice-search = { path = "crates/juice-search" }
+juice-mcp = { path = "crates/juice-mcp" }

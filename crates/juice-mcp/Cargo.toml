@@ -1,0 +1,21 @@
+[package]
+name = "juice-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Built-in Model Context Protocol (MCP) stdio JSON-RPC 2.0 server for juice"
+
+[dependencies]
+anyhow.workspace = true
+juice-core.workspace = true
+juice-lean.workspace = true
+juice-llm.workspace = true
+juice-search.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

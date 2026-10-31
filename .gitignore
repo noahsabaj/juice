@@ -1,0 +1,5 @@
+/target
+.juice/
+.env
+*.olean
+.DS_Store
